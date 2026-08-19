@@ -1,10 +1,11 @@
-import os, sys, json, time, requests
+import os, sys, json, time, requests, urllib.parse
 from m3u_parser import fetch_m3u, Channel
 from typing import List, Dict
 
 # ── Config ────────────────────────────────────────────────────────────────────
-BOT_TOKEN  = os.environ["BOT_TOKEN"]
-ADMIN_ID   = int(os.environ["ADMIN_ID"])   # তোমার Telegram user ID
+BOT_TOKEN   = os.environ["BOT_TOKEN"]
+ADMIN_ID    = int(os.environ["ADMIN_ID"])   # তোমার Telegram user ID
+PLAYER_URL  = os.environ.get("PLAYER_URL", "").rstrip("/")  # GitHub Pages URL
 CONFIG_FILE = "config.json"
 
 BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
@@ -58,11 +59,27 @@ def get_groups(channels: List[Channel]) -> Dict[str, List[Channel]]:
 
 # ── Inline keyboard helper ─────────────────────────────────────────────────────
 def keyboard(rows: list) -> dict:
-    """rows = [[("text","callback_data"), ...], ...]"""
-    return {"inline_keyboard": [
-        [{"text": t, "callback_data": d} for t, d in row]
-        for row in rows
-    ]}
+    """rows = [[("text","callback_data"), ...], ...]
+    A row item can also be a 3-tuple ("text", None, web_app_url) for a Web App button."""
+    kb_rows = []
+    for row in rows:
+        kb_row = []
+        for item in row:
+            if len(item) == 3:
+                text, _, web_app_url = item
+                kb_row.append({"text": text, "web_app": {"url": web_app_url}})
+            else:
+                text, data = item
+                kb_row.append({"text": text, "callback_data": data})
+        kb_rows.append(kb_row)
+    return {"inline_keyboard": kb_rows}
+
+def play_url(ch) -> str:
+    """Build the Telegram Mini App player URL for a channel."""
+    if not PLAYER_URL:
+        return ""
+    q = urllib.parse.urlencode({"url": ch.url, "name": ch.name})
+    return f"{PLAYER_URL}/player.html?{q}"
 
 # ── Sessions (page state per user) ────────────────────────────────────────────
 # key: chat_id → {"group": str, "page": int}
@@ -151,7 +168,11 @@ def cmd_group_page(chat_id: int, group: str, page: int, channels: list, message_
     btn_rows = []
     for ch in chunk:
         lines.append(f"• {ch.name}")
-        btn_rows.append([(f"▶ {ch.name[:30]}", f"ch|{ch.name[:60]}")])
+        row = [(f"{ch.name[:22]}", f"ch|{ch.name[:60]}")]
+        p_url = play_url(ch)
+        if p_url:
+            row.append(("▶️ Play", None, p_url))
+        btn_rows.append(row)
 
     # Pagination
     nav = []
@@ -195,12 +216,14 @@ def cmd_channel_detail(chat_id: int, ch_name: str, channels: list, message_id=No
 🔗 <b>Stream Link:</b>
 <code>{ch.url}</code>
 
-📋 VLC/MX Player-এ link টা paste করে দেখো!
+📋 VLC/MX Player-এ link টা paste করেও দেখা যাবে!
 """
-    btns = keyboard([
-        [("🔙 ফিরে যাও", f"grp|{ch.group[:50]}|0")],
-        [("🔍 একই ক্যাটেগরি", f"grp|{ch.group[:50]}|0")]
-    ])
+    rows = []
+    p_url = play_url(ch)
+    if p_url:
+        rows.append([(f"▶️ বট-এর ভেতরেই Play করো", None, p_url)])
+    rows.append([("🔙 ফিরে যাও", f"grp|{ch.group[:50]}|0")])
+    btns = keyboard(rows)
     if message_id:
         api("editMessageText", chat_id=chat_id, message_id=message_id,
             text=text, parse_mode="HTML", reply_markup=btns)
@@ -226,7 +249,11 @@ def cmd_search(chat_id: int, query: str, channels: list):
     btn_rows = []
     for ch in results[:20]:
         lines.append(f"• {ch.name} ({ch.group})")
-        btn_rows.append([(f"▶ {ch.name[:30]}", f"ch|{ch.name[:60]}")])
+        row = [(f"{ch.name[:22]}", f"ch|{ch.name[:60]}")]
+        p_url = play_url(ch)
+        if p_url:
+            row.append(("▶️ Play", None, p_url))
+        btn_rows.append(row)
 
     if len(results) > 20:
         lines.append(f"\n... এবং আরো {len(results)-20} টি")

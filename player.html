@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>IPTV Player</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.4.12/hls.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0a0a0f;
+    color: #fff;
+    font-family: 'Segoe UI', sans-serif;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Header ── */
+  #header {
+    background: linear-gradient(135deg, #1a1a2e, #16213e);
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid #ffffff15;
+    flex-shrink: 0;
+  }
+
+  #logo {
+    width: 32px; height: 32px;
+    background: linear-gradient(135deg, #00e676, #00b0ff);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; flex-shrink: 0;
+  }
+
+  #channel-info { flex: 1; overflow: hidden; }
+
+  #channel-name {
+    font-size: 15px; font-weight: 700;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    color: #fff;
+  }
+
+  #channel-status {
+    font-size: 11px; color: #8892a4; margin-top: 1px;
+  }
+
+  #live-badge {
+    background: #ff4444;
+    color: #fff; font-size: 10px; font-weight: 700;
+    padding: 2px 7px; border-radius: 4px;
+    animation: pulse 1.5s infinite;
+    flex-shrink: 0;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.5; }
+  }
+
+  /* ── Video container ── */
+  #video-wrap {
+    position: relative;
+    background: #000;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  #player {
+    width: 100%; height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+
+  /* Loading overlay */
+  #loading {
+    position: absolute; inset: 0;
+    background: #000000cc;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 14px; z-index: 10;
+  }
+
+  .spinner {
+    width: 48px; height: 48px;
+    border: 4px solid #ffffff20;
+    border-top-color: #00e676;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #loading p { color: #aaa; font-size: 13px; }
+
+  /* Error overlay */
+  #error-box {
+    position: absolute; inset: 0;
+    background: #000000cc;
+    display: none; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 16px; z-index: 10; padding: 24px; text-align: center;
+  }
+
+  #error-box .icon { font-size: 48px; }
+  #error-box h3 { font-size: 16px; color: #ff6b6b; }
+  #error-box p  { font-size: 13px; color: #888; line-height: 1.5; }
+
+  #retry-btn {
+    background: linear-gradient(135deg, #00e676, #00b0ff);
+    color: #000; font-weight: 700; font-size: 14px;
+    border: none; border-radius: 10px;
+    padding: 10px 28px; cursor: pointer;
+  }
+
+  /* ── Controls ── */
+  #controls {
+    background: linear-gradient(135deg, #1a1a2e, #16213e);
+    padding: 10px 14px;
+    border-top: 1px solid #ffffff15;
+    flex-shrink: 0;
+  }
+
+  .ctrl-row {
+    display: flex; align-items: center;
+    justify-content: space-between; gap: 10px;
+  }
+
+  /* Volume */
+  .vol-row {
+    display: flex; align-items: center; gap: 8px; flex: 1;
+  }
+
+  #vol-icon { font-size: 18px; cursor: pointer; flex-shrink: 0; }
+
+  #volume {
+    flex: 1; -webkit-appearance: none;
+    height: 4px; border-radius: 2px;
+    background: linear-gradient(to right, #00e676 var(--vol, 100%), #ffffff30 var(--vol, 100%));
+    outline: none; cursor: pointer;
+  }
+
+  #volume::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: #00e676;
+  }
+
+  /* Quality */
+  #quality-select {
+    background: #ffffff15; color: #fff;
+    border: 1px solid #ffffff20; border-radius: 8px;
+    padding: 4px 8px; font-size: 12px; cursor: pointer;
+    outline: none;
+  }
+
+  /* Fullscreen */
+  #fs-btn {
+    background: #ffffff15; border: none; border-radius: 8px;
+    color: #fff; font-size: 16px; padding: 4px 10px; cursor: pointer;
+  }
+
+  /* Stats row */
+  .stats-row {
+    display: flex; gap: 12px; margin-top: 8px;
+    font-size: 11px; color: #8892a4;
+  }
+
+  .stat-item { display: flex; align-items: center; gap: 4px; }
+  .stat-dot  { width: 6px; height: 6px; border-radius: 50%; }
+  .dot-green { background: #00e676; }
+  .dot-blue  { background: #00b0ff; }
+  .dot-orange{ background: #ff6d00; }
+
+  /* No URL screen */
+  #no-url {
+    display: none;
+    flex: 1; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 12px; padding: 24px; text-align: center;
+  }
+  #no-url .icon { font-size: 56px; }
+  #no-url h2 { font-size: 18px; }
+  #no-url p  { font-size: 13px; color: #888; line-height: 1.6; }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div id="header">
+  <div id="logo">📺</div>
+  <div id="channel-info">
+    <div id="channel-name">লোড হচ্ছে...</div>
+    <div id="channel-status">সংযোগ করা হচ্ছে</div>
+  </div>
+  <div id="live-badge">🔴 LIVE</div>
+</div>
+
+<!-- Video -->
+<div id="video-wrap">
+  <video id="player" playsinline autoplay></video>
+
+  <div id="loading">
+    <div class="spinner"></div>
+    <p>স্ট্রিম লোড হচ্ছে...</p>
+  </div>
+
+  <div id="error-box">
+    <div class="icon">📡</div>
+    <h3>স্ট্রিম চালু হচ্ছে না</h3>
+    <p>চ্যানেলটি এই মুহূর্তে উপলব্ধ নেই অথবা লিঙ্কটি কাজ করছে না।</p>
+    <button id="retry-btn" onclick="retryPlay()">🔄 আবার চেষ্টা করো</button>
+  </div>
+
+  <!-- No URL screen -->
+  <div id="no-url" style="display:flex">
+    <div class="icon">🎬</div>
+    <h2>IPTV Player</h2>
+    <p>Bot থেকে কোনো চ্যানেল select করো এবং Play বাটন চাপো।</p>
+  </div>
+</div>
+
+<!-- Controls -->
+<div id="controls">
+  <div class="ctrl-row">
+    <div class="vol-row">
+      <span id="vol-icon">🔊</span>
+      <input type="range" id="volume" min="0" max="100" value="100"
+             oninput="setVolume(this.value)">
+    </div>
+    <select id="quality-select" onchange="setQuality(this.value)">
+      <option value="-1">Auto</option>
+    </select>
+    <button id="fs-btn" onclick="toggleFS()">⛶</button>
+  </div>
+  <div class="stats-row">
+    <div class="stat-item">
+      <div class="stat-dot dot-green"></div>
+      <span id="stat-res">--</span>
+    </div>
+    <div class="stat-item">
+      <div class="stat-dot dot-blue"></div>
+      <span id="stat-buf">বাফার: 0s</span>
+    </div>
+    <div class="stat-item">
+      <div class="stat-dot dot-orange"></div>
+      <span id="stat-bw">--</span>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Telegram Web App init ────────────────────────────────────────────────────
+if (window.Telegram && window.Telegram.WebApp) {
+  window.Telegram.WebApp.ready();
+  window.Telegram.WebApp.expand();
+}
+
+// ── Parse URL params ─────────────────────────────────────────────────────────
+const params   = new URLSearchParams(window.location.search);
+const streamUrl = params.get("url");
+const chName    = params.get("name") || "Unknown Channel";
+
+document.getElementById("channel-name").textContent = chName;
+
+// ── HLS Player ───────────────────────────────────────────────────────────────
+const video    = document.getElementById("player");
+const loading  = document.getElementById("loading");
+const errorBox = document.getElementById("error-box");
+const noUrl    = document.getElementById("no-url");
+
+let hls = null;
+
+function showLoading() {
+  loading.style.display  = "flex";
+  errorBox.style.display = "none";
+  noUrl.style.display    = "none";
+}
+
+function hideLoading() {
+  loading.style.display = "none";
+}
+
+function showError() {
+  loading.style.display  = "none";
+  errorBox.style.display = "flex";
+  document.getElementById("channel-status").textContent = "❌ সংযোগ ব্যর্থ";
+}
+
+function initPlayer(url) {
+  if (!url) {
+    noUrl.style.display   = "flex";
+    loading.style.display = "none";
+    return;
+  }
+
+  showLoading();
+  document.getElementById("channel-status").textContent = "সংযোগ করা হচ্ছে...";
+
+  if (hls) { hls.destroy(); hls = null; }
+
+  // Try HLS.js first (M3U8)
+  if (Hls.isSupported()) {
+    hls = new Hls({
+      maxBufferLength: 30,
+      maxMaxBufferLength: 60,
+      enableWorker: true,
+      lowLatencyMode: true,
+    });
+
+    hls.loadSource(url);
+    hls.attachMedia(video);
+
+    hls.on(Hls.Events.MANIFEST_PARSED, (e, data) => {
+      hideLoading();
+      document.getElementById("channel-status").textContent = "▶ সরাসরি সম্প্রচার";
+      video.play().catch(() => {});
+      populateQualities(data.levels);
+    });
+
+    hls.on(Hls.Events.ERROR, (e, data) => {
+      if (data.fatal) {
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+          hls.startLoad();
+        } else {
+          showError();
+        }
+      }
+    });
+
+    // Stats update
+    hls.on(Hls.Events.FRAG_BUFFERED, (e, data) => {
+      const level = hls.levels[hls.currentLevel];
+      if (level) {
+        document.getElementById("stat-res").textContent =
+          `${level.width}×${level.height}`;
+        document.getElementById("stat-bw").textContent =
+          `${(level.bitrate / 1000).toFixed(0)} kbps`;
+      }
+    });
+
+  } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+    // Native HLS (Safari)
+    video.src = url;
+    video.addEventListener("loadedmetadata", () => {
+      hideLoading();
+      video.play().catch(() => {});
+    });
+    video.addEventListener("error", showError);
+  } else {
+    // Direct play fallback
+    video.src = url;
+    video.addEventListener("canplay", () => { hideLoading(); video.play(); });
+    video.addEventListener("error", showError);
+  }
+
+  // Buffer stats
+  setInterval(() => {
+    if (video.buffered.length > 0 && video.currentTime > 0) {
+      const buf = video.buffered.end(video.buffered.length - 1) - video.currentTime;
+      document.getElementById("stat-buf").textContent = `বাফার: ${buf.toFixed(1)}s`;
+    }
+  }, 2000);
+}
+
+function retryPlay() {
+  initPlayer(streamUrl);
+}
+
+// ── Quality selector ─────────────────────────────────────────────────────────
+function populateQualities(levels) {
+  const sel = document.getElementById("quality-select");
+  sel.innerHTML = '<option value="-1">Auto</option>';
+  levels.forEach((l, i) => {
+    const opt = document.createElement("option");
+    opt.value = i;
+    opt.textContent = l.height ? `${l.height}p` : `Level ${i}`;
+    sel.appendChild(opt);
+  });
+}
+
+function setQuality(val) {
+  if (hls) hls.currentLevel = parseInt(val);
+}
+
+// ── Volume ────────────────────────────────────────────────────────────────────
+function setVolume(val) {
+  video.volume = val / 100;
+  document.getElementById("volume").style.setProperty("--vol", val + "%");
+  document.getElementById("vol-icon").textContent =
+    val == 0 ? "🔇" : val < 50 ? "🔉" : "🔊";
+}
+
+// ── Fullscreen ────────────────────────────────────────────────────────────────
+function toggleFS() {
+  if (!document.fullscreenElement) {
+    document.getElementById("video-wrap").requestFullscreen?.();
+  } else {
+    document.exitFullscreen?.();
+  }
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+if (streamUrl) {
+  noUrl.style.display = "none";
+  initPlayer(decodeURIComponent(streamUrl));
+} else {
+  loading.style.display = "none";
+  noUrl.style.display   = "flex";
+}
+</script>
+</body>
+</html>

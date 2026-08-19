@@ -30,8 +30,9 @@ jobs:
       - name: Run bot
         run: python bot.py 350
         env:
-          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          ADMIN_ID:  ${{ secrets.ADMIN_ID }}
+          BOT_TOKEN:  ${{ secrets.BOT_TOKEN }}
+          ADMIN_ID:   ${{ secrets.ADMIN_ID }}
+          PLAYER_URL: ${{ secrets.PLAYER_URL }}
 
       - name: Save config (offset update)
         if: always()
