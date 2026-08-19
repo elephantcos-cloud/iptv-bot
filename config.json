@@ -1,4 +1,6 @@
 {
-  "m3u_sources": [],
-  "offset": 0
+  "m3u_sources": [
+    "https://xc.adultiptv.net/get.php?username=adultiptv&password=adultiptv&type=m3u"
+  ],
+  "offset": 470565885
 }
