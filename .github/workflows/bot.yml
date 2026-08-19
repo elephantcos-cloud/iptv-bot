@@ -1,0 +1,43 @@
+name: IPTV Bot
+
+on:
+  schedule:
+    - cron: '0 2 * * *'    # BD 8AM
+    - cron: '0 8 * * *'    # BD 2PM
+    - cron: '0 14 * * *'   # BD 8PM
+    - cron: '0 20 * * *'   # BD 2AM
+  workflow_dispatch:
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: write   # config.json update করতে
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run bot
+        run: python bot.py 350
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          ADMIN_ID:  ${{ secrets.ADMIN_ID }}
+
+      - name: Save config (offset update)
+        if: always()
+        run: |
+          git config user.email "bot@github.com"
+          git config user.name "IPTV Bot"
+          git add config.json
+          git diff --staged --quiet || git commit -m "Update config offset"
+          git push || true
