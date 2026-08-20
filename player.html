@@ -190,8 +190,29 @@
     width: 100vw; height: 100vh; object-fit: contain;
   }
   #video-wrap:fullscreen #fs-controls,
-  #video-wrap:-webkit-full-screen #fs-controls {
+  #video-wrap:-webkit-full-screen #fs-controls,
+  #video-wrap.manual-fs #fs-controls {
     display: flex;
+  }
+
+  /* Manual (CSS-based) fullscreen — works even when the real Fullscreen API
+     is blocked by the host webview (e.g. Telegram in-app browser) */
+  #video-wrap.manual-fs {
+    position: fixed !important;
+    top: 0; left: 0;
+    width: 100vw; height: 100vh;
+    z-index: 9999;
+    background: #000;
+  }
+
+  /* When the phone is still in portrait, rotate the box to simulate landscape */
+  #video-wrap.manual-fs.rotate-landscape {
+    width: 100vh;
+    height: 100vw;
+    top: 0;
+    left: 100%;
+    transform-origin: 0 0;
+    transform: rotate(90deg);
   }
 
   #fs-controls {
@@ -543,30 +564,65 @@ document.getElementById("vol-icon").addEventListener("click", () => {
   }
 });
 
-// ── Fullscreen ────────────────────────────────────────────────────────────────
+// ── Fullscreen (manual CSS-based, works inside Telegram's webview too) ────────
+const wrapEl = document.getElementById("video-wrap");
+let manualFsActive = false;
+
+function isInFsMode() {
+  return manualFsActive || !!(document.fullscreenElement || document.webkitFullscreenElement);
+}
+
+function updateRotateState() {
+  if (!manualFsActive) return;
+  const isPortrait = window.innerHeight > window.innerWidth;
+  wrapEl.classList.toggle("rotate-landscape", isPortrait);
+}
+
 function toggleFS(e) {
   if (e) e.stopPropagation();
-  if (!document.fullscreenElement && !document.webkitFullscreenElement) {
-    const el = document.getElementById("video-wrap");
-    (el.requestFullscreen || el.webkitRequestFullscreen)?.call(el);
+
+  if (!isInFsMode()) {
+    // Best-effort native fullscreen + orientation lock (works on some platforms)
+    const tg = window.Telegram && window.Telegram.WebApp;
+    if (tg && typeof tg.requestFullscreen === "function") {
+      try { tg.requestFullscreen(); } catch (_) {}
+    }
+    (wrapEl.requestFullscreen || wrapEl.webkitRequestFullscreen)?.call(wrapEl);
     if (screen.orientation && screen.orientation.lock) {
       screen.orientation.lock("landscape").catch(() => {});
     }
+
+    // Guaranteed fallback: our own CSS fullscreen + rotate hack
+    manualFsActive = true;
+    wrapEl.classList.add("manual-fs");
+    updateRotateState();
+    window.addEventListener("resize", updateRotateState);
   } else {
-    (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
+    const tg = window.Telegram && window.Telegram.WebApp;
+    if (tg && typeof tg.exitFullscreen === "function") {
+      try { tg.exitFullscreen(); } catch (_) {}
+    }
+    if (document.fullscreenElement || document.webkitFullscreenElement) {
+      (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
+    }
     if (screen.orientation && screen.orientation.unlock) {
       try { screen.orientation.unlock(); } catch (_) {}
     }
+    manualFsActive = false;
+    wrapEl.classList.remove("manual-fs", "rotate-landscape");
+    window.removeEventListener("resize", updateRotateState);
   }
+  syncFsButton();
+}
+
+function syncFsButton() {
+  const isFs = isInFsMode();
+  document.getElementById("fs-exit").textContent = isFs ? "ছোট করো" : "বড় করো";
+  document.getElementById("volume-fs").value = document.getElementById("volume").value;
 }
 
 document.addEventListener("fullscreenchange", syncFsButton);
 document.addEventListener("webkitfullscreenchange", syncFsButton);
-function syncFsButton() {
-  const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
-  document.getElementById("fs-exit").textContent = isFs ? "ছোট করো" : "বড় করো";
-  document.getElementById("volume-fs").value = document.getElementById("volume").value;
-}
 
 // ── Play / Pause toggle ──────────────────────────────────────────────────────
 let iconTimer = null;
