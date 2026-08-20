@@ -190,6 +190,34 @@
   #no-url .icon { font-size: 56px; }
   #no-url h2 { font-size: 18px; }
   #no-url p  { font-size: 13px; color: #888; line-height: 1.6; }
+
+  /* Unmute overlay */
+  #unmute-overlay {
+    position: absolute;
+    bottom: 16px; left: 50%;
+    transform: translateX(-50%);
+    background: #000000cc;
+    border: 1px solid #ffffff30;
+    border-radius: 30px;
+    padding: 10px 20px;
+    display: none;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #fff;
+    z-index: 20;
+    cursor: pointer;
+    animation: floatUp 0.4s ease;
+  }
+
+  #unmute-overlay.show { display: flex; }
+
+  .unmute-icon { font-size: 18px; }
+
+  @keyframes floatUp {
+    from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+    to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+  }
 </style>
 </head>
 <body>
@@ -206,7 +234,12 @@
 
 <!-- Video -->
 <div id="video-wrap">
-  <video id="player" playsinline autoplay></video>
+  <video id="player" playsinline autoplay muted></video>
+
+  <div id="unmute-overlay" onclick="unmuteVideo()">
+    <div class="unmute-icon">🔇</div>
+    <div>ট্যাপ করে সাউন্ড চালু করো</div>
+  </div>
 
   <div id="loading">
     <div class="spinner"></div>
@@ -276,6 +309,9 @@ const video    = document.getElementById("player");
 const loading  = document.getElementById("loading");
 const errorBox = document.getElementById("error-box");
 const noUrl    = document.getElementById("no-url");
+const unmuteOv = document.getElementById("unmute-overlay");
+
+video.muted = true;  // Required for autoplay in Telegram's in-app browser
 
 let hls = null;
 
@@ -292,7 +328,31 @@ function hideLoading() {
 function showError() {
   loading.style.display  = "none";
   errorBox.style.display = "flex";
+  unmuteOv.classList.remove("show");
   document.getElementById("channel-status").textContent = "❌ সংযোগ ব্যর্থ";
+}
+
+function attemptPlay() {
+  const p = video.play();
+  if (p !== undefined) {
+    p.then(() => {
+      // Playing (muted). Prompt user to enable sound.
+      if (video.muted) unmuteOv.classList.add("show");
+    }).catch(() => {
+      // Even muted autoplay failed — show a manual play tap target.
+      unmuteOv.classList.add("show");
+      unmuteOv.querySelector("div:last-child").textContent = "ট্যাপ করে চালু করো";
+      document.querySelector("#unmute-overlay .unmute-icon").textContent = "▶️";
+    });
+  }
+}
+
+function unmuteVideo() {
+  video.muted = false;
+  document.getElementById("volume").value = 100;
+  setVolume(100);
+  video.play().catch(() => {});
+  unmuteOv.classList.remove("show");
 }
 
 function initPlayer(url) {
@@ -322,7 +382,7 @@ function initPlayer(url) {
     hls.on(Hls.Events.MANIFEST_PARSED, (e, data) => {
       hideLoading();
       document.getElementById("channel-status").textContent = "▶ সরাসরি সম্প্রচার";
-      video.play().catch(() => {});
+      attemptPlay();
       populateQualities(data.levels);
     });
 
@@ -352,13 +412,13 @@ function initPlayer(url) {
     video.src = url;
     video.addEventListener("loadedmetadata", () => {
       hideLoading();
-      video.play().catch(() => {});
+      attemptPlay();
     });
     video.addEventListener("error", showError);
   } else {
     // Direct play fallback
     video.src = url;
-    video.addEventListener("canplay", () => { hideLoading(); video.play(); });
+    video.addEventListener("canplay", () => { hideLoading(); attemptPlay(); });
     video.addEventListener("error", showError);
   }
 
@@ -394,10 +454,20 @@ function setQuality(val) {
 // ── Volume ────────────────────────────────────────────────────────────────────
 function setVolume(val) {
   video.volume = val / 100;
+  if (val > 0) video.muted = false;
   document.getElementById("volume").style.setProperty("--vol", val + "%");
   document.getElementById("vol-icon").textContent =
     val == 0 ? "🔇" : val < 50 ? "🔉" : "🔊";
 }
+
+document.getElementById("vol-icon").addEventListener("click", () => {
+  if (video.muted || video.volume === 0) {
+    unmuteVideo();
+  } else {
+    video.muted = true;
+    document.getElementById("vol-icon").textContent = "🔇";
+  }
+});
 
 // ── Fullscreen ────────────────────────────────────────────────────────────────
 function toggleFS() {
@@ -409,6 +479,7 @@ function toggleFS() {
 }
 
 // ── Init ─────────────────────────────────────────────────────────────────────
+document.getElementById("vol-icon").textContent = "🔇";  // starts muted
 if (streamUrl) {
   noUrl.style.display = "none";
   initPlayer(decodeURIComponent(streamUrl));
