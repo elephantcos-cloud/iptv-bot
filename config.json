@@ -1,9 +1,6 @@
 {
   "m3u_sources": [
-    "https://xc.adultiptv.net/get.php?username=adultiptv&password=adultiptv&type=m3u",
-    "https://iptv-org.github.io/iptv/regions/asia.m3u",
-    "https://iptv-org.github.io/iptv/countries/bd.m3u",
-    "https://iptv-org.github.io/iptv/index.m3u"
+    "https://iptv-org.github.io/iptv/countries/bd.m3u"
   ],
-  "offset": 470565948
+  "offset": 470566105
 }
