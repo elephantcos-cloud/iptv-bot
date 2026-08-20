@@ -143,7 +143,7 @@
   #volume {
     flex: 1; -webkit-appearance: none;
     height: 4px; border-radius: 2px;
-    background: linear-gradient(to right, #00e676 var(--vol, 100%), #ffffff30 var(--vol, 100%));
+    background: linear-gradient(to right, #00e676 var(--vol, 0%), #ffffff30 var(--vol, 0%));
     outline: none; cursor: pointer;
   }
 
@@ -179,6 +179,65 @@
   .dot-green { background: #00e676; }
   .dot-blue  { background: #00b0ff; }
   .dot-orange{ background: #ff6d00; }
+
+  /* Fullscreen mode - video fills screen, controls overlay */
+  #video-wrap:fullscreen,
+  #video-wrap:-webkit-full-screen {
+    background: #000;
+  }
+  #video-wrap:fullscreen #player,
+  #video-wrap:-webkit-full-screen #player {
+    width: 100vw; height: 100vh; object-fit: contain;
+  }
+  #video-wrap:fullscreen #fs-controls,
+  #video-wrap:-webkit-full-screen #fs-controls {
+    display: flex;
+  }
+
+  #fs-controls {
+    display: none;
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    background: linear-gradient(transparent, #000000cc);
+    padding: 30px 16px 14px;
+    align-items: center;
+    gap: 14px;
+    z-index: 15;
+  }
+
+  #fs-playpause {
+    background: #ffffff20;
+    border: none; border-radius: 50%;
+    width: 42px; height: 42px;
+    color: #fff; font-size: 18px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; flex-shrink: 0;
+  }
+
+  #fs-exit {
+    background: #ffffff20;
+    border: none; border-radius: 8px;
+    color: #fff; font-size: 16px;
+    padding: 8px 12px; cursor: pointer; flex-shrink: 0;
+  }
+
+  /* Center play/pause tap zone (normal mode) */
+  #center-toggle {
+    position: absolute; inset: 0;
+    z-index: 5;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  #center-icon {
+    width: 56px; height: 56px;
+    background: #00000070;
+    border-radius: 50%;
+    display: none;
+    align-items: center; justify-content: center;
+    font-size: 24px; color: #fff;
+  }
+
+  #center-icon.show { display: flex; }
 
   /* No URL screen */
   #no-url {
@@ -236,6 +295,19 @@
 <div id="video-wrap">
   <video id="player" playsinline autoplay muted></video>
 
+  <!-- Tap-to-play/pause zone -->
+  <div id="center-toggle" onclick="togglePlayPause()">
+    <div id="center-icon">▶️</div>
+  </div>
+
+  <!-- Fullscreen bottom controls -->
+  <div id="fs-controls">
+    <button id="fs-playpause" onclick="togglePlayPause(event)">⏸️</button>
+    <input type="range" id="volume-fs" min="0" max="100" value="0"
+           oninput="setVolume(this.value)" style="flex:1">
+    <button id="fs-exit" onclick="toggleFS(event)">ছোট করো</button>
+  </div>
+
   <div id="unmute-overlay" onclick="unmuteVideo()">
     <div class="unmute-icon">🔇</div>
     <div>ট্যাপ করে সাউন্ড চালু করো</div>
@@ -266,7 +338,7 @@
   <div class="ctrl-row">
     <div class="vol-row">
       <span id="vol-icon">🔊</span>
-      <input type="range" id="volume" min="0" max="100" value="100"
+      <input type="range" id="volume" min="0" max="100" value="0"
              oninput="setVolume(this.value)">
     </div>
     <select id="quality-select" onchange="setQuality(this.value)">
@@ -455,6 +527,8 @@ function setQuality(val) {
 function setVolume(val) {
   video.volume = val / 100;
   if (val > 0) video.muted = false;
+  document.getElementById("volume").value = val;
+  document.getElementById("volume-fs").value = val;
   document.getElementById("volume").style.setProperty("--vol", val + "%");
   document.getElementById("vol-icon").textContent =
     val == 0 ? "🔇" : val < 50 ? "🔉" : "🔊";
@@ -470,13 +544,53 @@ document.getElementById("vol-icon").addEventListener("click", () => {
 });
 
 // ── Fullscreen ────────────────────────────────────────────────────────────────
-function toggleFS() {
-  if (!document.fullscreenElement) {
-    document.getElementById("video-wrap").requestFullscreen?.();
+function toggleFS(e) {
+  if (e) e.stopPropagation();
+  if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+    const el = document.getElementById("video-wrap");
+    (el.requestFullscreen || el.webkitRequestFullscreen)?.call(el);
+    if (screen.orientation && screen.orientation.lock) {
+      screen.orientation.lock("landscape").catch(() => {});
+    }
   } else {
-    document.exitFullscreen?.();
+    (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
+    if (screen.orientation && screen.orientation.unlock) {
+      try { screen.orientation.unlock(); } catch (_) {}
+    }
   }
 }
+
+document.addEventListener("fullscreenchange", syncFsButton);
+document.addEventListener("webkitfullscreenchange", syncFsButton);
+function syncFsButton() {
+  const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  document.getElementById("fs-exit").textContent = isFs ? "ছোট করো" : "বড় করো";
+  document.getElementById("volume-fs").value = document.getElementById("volume").value;
+}
+
+// ── Play / Pause toggle ──────────────────────────────────────────────────────
+let iconTimer = null;
+function togglePlayPause(e) {
+  if (e) e.stopPropagation();
+  if (video.paused) {
+    video.play().catch(() => {});
+  } else {
+    video.pause();
+  }
+}
+
+function updatePlayIcons() {
+  const icon = video.paused ? "▶️" : "⏸️";
+  const centerIcon = document.getElementById("center-icon");
+  document.getElementById("fs-playpause").textContent = icon;
+  centerIcon.textContent = icon;
+  centerIcon.classList.add("show");
+  clearTimeout(iconTimer);
+  iconTimer = setTimeout(() => centerIcon.classList.remove("show"), 700);
+}
+
+video.addEventListener("play",  updatePlayIcons);
+video.addEventListener("pause", updatePlayIcons);
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 document.getElementById("vol-icon").textContent = "🔇";  // starts muted
